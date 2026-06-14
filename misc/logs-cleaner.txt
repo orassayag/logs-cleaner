@@ -1,0 +1,66 @@
+Repo:
+https://github.com/orassayag/logs-cleaner
+
+The Goal:
+To clean local logs from local repos
+
+This node.js typescript (via pnpma as the package manager) app will scan the list of repositories from a specific path - C:\Or\web\project-repos-names.json
+
+The structure of this file - array of repos paths:
+
+[
+  {
+    "name": "actions-manager",
+    "url": "https://github.com/orassayag/actions-manager",
+    "type": "active",
+    "purpose": "personal",
+    "structure": "single"
+  }
+]
+
+We will filter only "type": "active" ones and ignore the rest of the project.
+For each project we will perform a search for the "logs" directoy, which may be found on the root folder of the repo or may be found inside the "src" folder.
+
+If the logs folder not found in any of these places, skip the project.
+
+Once the logs folder found - we should clean it's content from all files. Do retry logic if failed. If file currently in use (can happen but in rare cases) skip the proceess.
+
+Of course, like other projects, it will have a local logger and it will clean its own previoues logs first once called, but not the logs of the current session (make sence).
+
+In addition - For a specific project called "C:\Or\web\projects\daily-events-bot" we will clean both the logs folder, and another specific path (C:\Or\web\projects\daily-events-bot\db) so we wiil handle it in a robust generic way:
+
+Of course the paths should be supported both for windows and mac since it will most of the time will run on windows but might in the future moved to be a cron job on my mac.
+
+In the first scan we will keep in some json file the paths of the logs, so after the first run, on the second run, it will already knows the places of the logs folder. If the place not found, as a fallback, it will sarch again on the root and in the "src" folder. If not found, it will skip and delete it from the json file. The json file will be called "db/paths.json" with the structure of project name and paths to delete (array), so for the specific project i told you you will already include it on the json file. If not found - skip it.
+
+This app will be triggered via Window Scheduler Tasks - I have an app called "actions-manager" which all routes of the Window Scheduler Tasks (All the tasks route to this app and it call the relevant app according to an argument), here is an example (We should keep these pattrens - You should create a relevant file like this on the root and i will manually move it to the actions-manager repo):
+
+import { ActionDefinition } from '../types';
+import { spawnSync } from 'child_process';
+
+const reposScanReporter: ActionDefinition = {
+  name: 'reposScanReporter',
+  label: 'Repos Scan Reporter',
+  taskName: 'reposScanReporter',
+  schedulePeriod: 'Weekly',
+  pauseAfterRun: false,
+  run: async () => {
+    await Promise.resolve();
+    const result = spawnSync('pnpm', ['run', 'start', '--', 'AUTO'], {
+      cwd: 'C:\\Or\\web\\projects\\repos-maintainer',
+      stdio: 'inherit',
+      shell: true,
+    });
+
+    if (result.error) {
+      throw result.error;
+    }
+
+    if (result.status !== 0) {
+      throw new Error(`Process exited with code ${result.status}`);
+    }
+  },
+};
+
+export default reposScanReporter;
+
