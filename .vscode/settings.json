@@ -1,5 +1,13 @@
 {
-  "cSpell.words": ["Assayag", "orassayag", "msvc"],
+  "cSpell.words": [
+    "Assayag",
+    "EBUSY",
+    "EPERM",
+    "msvc",
+    "orassayag",
+    "rescan",
+    "rescanning"
+  ],
   "cSpell.ignorePaths": [
     "coverage",
     "node_modules",
