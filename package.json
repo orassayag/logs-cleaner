@@ -1,0 +1,109 @@
+{
+  "name": "logs-cleaner",
+  "version": "1.0.0",
+  "description": "Logs Cleaner is a Node.js TypeScript app utility built with pnpm to automate repository log cleanup. It scans projects from a config file, finds logs folders in root or src directories, caches paths for faster runs, retries failed deletions, skips locked files, supports custom cleanup paths",
+  "type": "module",
+  "private": false,
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/orassayag/logs-cleaner.git"
+  },
+  "keywords": [
+    "nodejs",
+    "typescript",
+    "pnpm",
+    "log-cleaner",
+    "logs",
+    "cleanup",
+    "automation",
+    "filesystem",
+    "file-management",
+    "repo-maintenance",
+    "developer-tools",
+    "task-scheduler",
+    "windows",
+    "macos",
+    "cross-platform",
+    "cli-tool",
+    "productivity",
+    "repository-management",
+    "maintenance-tool",
+    "file-cleanup"
+  ],
+  "main": "src/index.ts",
+  "scripts": {
+    "lint": "eslint \"src/**/*.ts\"",
+    "format": "prettier --write \"src/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\"",
+    "start": "tsx src/index.ts",
+    "start:live": "cross-env DRY_MODE=false tsx src/index.ts",
+    "start:no-cache": "tsx src/index.ts --no-cache",
+    "sync": "tsx src/index.ts --auto",
+    "dev": "tsx watch src/index.ts",
+    "test": "cross-env NODE_OPTIONS='--no-warnings' vitest run --coverage",
+    "test:watch": "cross-env NODE_OPTIONS='--no-warnings' vitest",
+    "test:no-coverage": "cross-env NODE_OPTIONS='--no-warnings' vitest run",
+    "test:ui": "vitest --ui",
+    "build": "tsc"
+  },
+  "author": "Or Assayag <orassayag@gmail.com>",
+  "contributors": [
+    {
+      "name": "Or Assayag",
+      "email": "orassayag@gmail.com",
+      "url": "https://github.com/orassayag"
+    }
+  ],
+  "files": [
+    ".vscode",
+    "dist",
+    "src",
+    ".gitignore",
+    ".prettierrc",
+    "eslint.config.mjs",
+    "CONTRIBUTING.md",
+    "LICENSE",
+    "INSTRUCTIONS.md",
+    "CHANGELOG.md",
+    "package.json",
+    "pnpm-lock.yaml",
+    "pnpm-workspace.yaml",
+    "README.md",
+    "tsconfig.json",
+    "vitest.config.ts"
+  ],
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/orassayag/logs-cleaner/issues"
+  },
+  "funding": {
+    "type": "github",
+    "url": "https://github.com/sponsors/orassayag"
+  },
+  "homepage": "https://github.com/orassayag/logs-cleaner#readme",
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=8.0.0"
+  },
+  "dependencies": {
+    "dotenv": "^17.4.2"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@rolldown/binding-win32-x64-msvc": "^1.1.1",
+    "@types/node": "^25.9.3",
+    "@typescript-eslint/eslint-plugin": "^8.61.0",
+    "@typescript-eslint/parser": "^8.61.0",
+    "@vitest/coverage-istanbul": "^4.1.8",
+    "@vitest/ui": "^4.1.8",
+    "cross-env": "^10.1.0",
+    "eslint": "^10.5.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-prettier": "^5.5.6",
+    "prettier": "^3.8.4",
+    "tsx": "^4.22.4",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.61.0",
+    "vitest": "^4.1.8"
+  }
+}
