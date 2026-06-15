@@ -1,330 +1,261 @@
 # logs-cleaner
 
-A professional Node.js and Puppeteer.js application designed to fetch, extract, and validate email addresses by crawling web pages from search engine results using specific and random search keys. This tool is built with a focus on efficiency and reliability, making it ideal for lead generation and data collection.
+A Node.js TypeScript command-line utility that scans configured local repositories, finds cleanup target directories, removes their contents, and reports the result as JSON log messages. It is designed for scheduled local repository maintenance rather than web crawling or data collection.
 
-Built in February 2020, this application automates the process of discovering email addresses across the web using intelligent search strategies, advanced validation, and MongoDB storage. It includes tools for handling browser sessions and ensuring data quality.
+Built in June 2026, this project automates cleanup of `logs` folders and explicitly configured cleanup paths under local projects, with retry behavior for transient filesystem failures and skipping behavior for locked entries.
 
 ## Features
 
-- 🔍 **Multi-Search Engine Support**: Crawls Bing and Google search results
-- 🤖 **Headless Browser**: Uses Puppeteer.js for real browser-based page rendering
-- ✉️ **Smart Email Validation**: Advanced validation with automatic typo correction
-- 🗄️ **MongoDB Storage**: Stores and deduplicates email addresses
-- 🔄 **Auto-Restart Monitor**: Automatically restarts on failures or timeouts
-- 🎯 **Flexible Goals**: Stop based on email count, time duration, or links crawled
-- 📊 **Real-Time Statistics**: Live console status updates with progress tracking
-- 🧪 **Development Mode**: Test with local sources without making real requests
-- 🚫 **Smart Filtering**: Configurable domain and email filters
-- 📝 **Comprehensive Logging**: Logs all emails and links to TXT files
-- 🇮🇱 **Hebrew Support**: Built-in Hebrew search key generation
-- 🧹 **Gibberish Detection**: Filters out randomly generated email addresses
+- 🔍 **Configured Repository Scanning**: Reads a JSON list of repositories and processes only entries marked as active
+- 🤖 **Scheduled CLI Execution**: Can be invoked by `pnpm start` or wrapped in an actions-manager task definition
+- ✉️ **Explicit Cleanup Targets**: Cleans configured paths such as `logs` or `db` when present in a repository entry
+- 🗄️ **Cross-Platform Path Handling**: Resolves Windows-style and POSIX-style paths without following symlinks
+- 🔄 **Retry Logic**: Retries transient cleanup failures before reporting them
+- 🎯 **Safe Target Filtering**: Skips missing paths, non-directories, and symlinked cleanup targets
+- 📊 **Structured JSON Logging**: Emits info, warning, and error messages as JSON lines for scheduler logs
+- 🧪 **Vitest Test Coverage**: Covers path resolution, repository loading, target discovery, cleanup behavior, CLI orchestration, and the actions-manager wrapper
+- 🚫 **Locked File Handling**: Treats `EBUSY` and `EPERM` cleanup failures as skipped paths instead of process failures
+- 📝 **Actions Manager Integration**: Includes a `logsCleaner` action that spawns the CLI from the configured project path
+- 🧹 **Nested Directory Cleaning**: Recursively empties directories while preserving the cleanup target directory itself
+- 🇮🇱 **No Email Validation**: The current implementation is filesystem cleanup only and does not include crawler or email-validation logic
 
 ## Getting Started
 
 ### Prerequisites
 
-- Node.js (v14 or higher)
-- MongoDB (v4 or higher)
-- npm or pnpm
+- Node.js v20 or higher
+- pnpm v8 or higher
+- A JSON repository list containing repository objects
+- Local filesystem access to the configured projects root
 
 ### Installation
 
 1. Clone the repository:
 
 ```bash
-git clone https://github.com/orassayag/crawler.git
-cd crawler
+git clone https://github.com/orassayag/logs-cleaner.git
+cd logs-cleaner
 ```
 
 2. Install dependencies:
 
 ```bash
-npm install
+pnpm install
 ```
 
-3. Ensure MongoDB is running:
+3. Type-check the project:
 
 ```bash
-mongod
-```
-
-4. For production mode with Puppeteer:
-
-```bash
-npm run preload
+pnpm build
 ```
 
 ### Quick Start
 
 #### Test Mode (Development)
 
+Run the test suite before exercising cleanup behavior on real paths:
+
 ```bash
-# Edit src/settings/settings.js
-# Set IS_PRODUCTION_MODE: false
-# Set GOAL_VALUE: 10
-npm start
+pnpm test:no-coverage
 ```
+
+For local experimentation, create a temporary repository list and project tree, then call `runCleanup` with those paths. Avoid running the default CLI against real repositories until the configured paths are correct.
 
 #### Production Mode
 
+Run the CLI against the configured repository list:
+
 ```bash
-# Edit src/settings/settings.js
-# Set IS_PRODUCTION_MODE: true
-# Configure search engines and keys
-npm run preload
-npm start
+pnpm start
 ```
 
-Type `y` when prompted to confirm settings and start crawling.
+The default configuration reads repositories from `C:\Or\web\project-repos-names.json` under `C:\Or\web\projects`, resolves each active repository by name, and cleans the configured cleanup paths.
 
 ## Configuration
 
-Edit `src/settings/settings.js` to configure:
+Edit the repository list JSON file and the optional `clear` field on each repository entry. The app does not use a separate settings file.
 
 ### Core Settings
 
-- `IS_PRODUCTION_MODE`: Use real crawling (`true`) or test mode (`false`)
-- `GOAL_TYPE`: Stop condition - `EMAIL_ADDRESSES`, `MINUTES`, or `LINKS`
-- `GOAL_VALUE`: Target value for the goal
-- `IS_DROP_COLLECTION`: Clear database before starting
+Core constants live in `src/config.ts`:
+
+- `DEFAULT_REPO_LIST_PATH`: Defaults to `C:\Or\web\project-repos-names.json`
+- `DEFAULT_PROJECTS_ROOT`: Defaults to `C:\Or\web\projects`
+- `DEFAULT_CLEAR_PATHS`: Defaults to `logs`
+- `OWN_LOGS_PATH`: Defaults to `logs`
+- `RETRY_ATTEMPTS`: Defaults to `3`
+- `RETRY_DELAY_MS`: Defaults to `100`
 
 ### Search Configuration
 
-- `SEARCH_KEY`: Static search term or `null` for random keys
-- `IS_ADVANCE_SEARCH_KEYS`: Use advanced Hebrew keys or basic static keys
-- Search engines configured in `src/configurations/files/searchEngines.configuration.js`
-- Search keys configured in `src/configurations/files/searchKeys.configuration.js`
+This section is legacy crawler terminology. For `logs-cleaner`, the equivalent configuration is the cleanup path list:
+
+- Repositories without a `clear` field clean `logs`
+- Repositories with `clear: ["db", "logs"]` clean both paths relative to the repository
+- Cleanup paths are resolved relative to each repository path
 
 ### Filtering
 
-- Email filters: `src/configurations/files/filterEmailAddress.configuration.js`
-- Link filters: `src/configurations/files/filterLinkDomains.configuration.js`
-- File extensions: `src/configurations/files/filterFileExtensions.configuration.js`
+Filtering is limited to cleanup target safety checks:
 
-See [INSTRUCTIONS.md](INSTRUCTIONS.md) for detailed configuration options.
+- Repository list entries must be objects with `type: "active"`
+- Missing cleanup targets are skipped
+- Non-directory cleanup targets are skipped
+- Symlinked cleanup targets are skipped
+- Locked files or directories are skipped instead of failing the entire cleanup
+
+See [INSTRUCTIONS.md](INSTRUCTIONS.md) for detailed setup and usage guidance.
 
 ## Available Scripts
 
 ### Main Application
 
 ```bash
-npm start              # Start crawler with monitoring
-npm run backup         # Backup the project
-npm run domains        # Count email domains from results
+pnpm start      # Run the cleanup CLI
+pnpm dev        # Run the CLI in watch mode
 ```
 
 ### Testing Scripts
 
 ```bash
-npm run val            # Validate single email address
-npm run valmany        # Validate multiple email addresses
-npm run valdebug       # Debug email validation
-npm run typos          # Test typo detection and correction
-npm run link           # Test link crawling
-npm run session        # Test session with predefined links
-npm run generator      # Test email address generation
-npm run cases          # Run email validation test cases
-npm run sand           # General testing sandbox
+pnpm test              # Run Vitest with coverage
+pnpm test:no-coverage  # Run Vitest without coverage
+pnpm test:watch        # Run Vitest in watch mode
+pnpm test:ui           # Run the Vitest UI
+pnpm build             # Type-check the TypeScript project
+pnpm lint              # Lint TypeScript source files
+pnpm format            # Format TypeScript source files
+pnpm format:check      # Check formatting without modifying files
 ```
 
 ## Project Structure
 
 ```
-crawler/
+logs-cleaner/
 ├── src/
-│   ├── monitor/              # Application entry point with restart logic
-│   ├── scripts/              # Executable scripts
-│   │   ├── crawl.script.js   # Main crawling script
-│   │   ├── backup.script.js  # Backup script
-│   │   └── domains.script.js # Domain counter script
-│   ├── logics/               # Business logic orchestration
-│   │   └── crawl.logic.js    # Core crawling logic
-│   ├── services/             # Service layer
-│   │   ├── crawlLink.service.js          # Link crawling
-│   │   ├── crawlEmailAddress.service.js  # Email extraction
-│   │   ├── emailAddressValidation.service.js # Email validation
-│   │   ├── mongoDatabase.service.js      # Database operations
-│   │   ├── puppeteer.service.js          # Browser automation
-│   │   └── search.service.js             # Search key generation
-│   ├── configurations/       # Configuration files
-│   │   ├── searchEngines.configuration.js
-│   │   ├── searchKeys.configuration.js
-│   │   ├── filterEmailAddress.configuration.js
-│   │   └── filterLinkDomains.configuration.js
-│   ├── settings/             # Application settings
-│   │   └── settings.js       # Main settings file
-│   ├── core/                 # Core models and enums
-│   │   ├── models/           # Data models
-│   │   └── enums/            # Enumerations
-│   ├── utils/                # Utility functions
-│   └── tests/                # Test files
-├── dist/                     # Output files (generated)
-│   ├── production/           # Production mode outputs
-│   └── development/          # Development mode outputs
-├── sources/                  # Test sources for development mode
-├── INSTRUCTIONS.md           # Detailed setup and usage guide
-├── CONTRIBUTING.md           # Contribution guidelines
-└── package.json
+│   ├── index.ts                  # CLI entry point and cleanup orchestration
+│   ├── config.ts                 # Default paths and retry settings
+│   ├── types.ts                  # Shared TypeScript types
+│   ├── project-repos.ts          # Repository list loading and active-entry filtering
+│   ├── discovery.ts              # Cleanup target resolution
+│   ├── cleanup.ts                # Recursive directory-content cleanup
+│   ├── path-model.ts             # Windows and POSIX path normalization
+│   ├── logger.ts                 # JSON line logging helper
+│   └── actions-manager/
+│       └── logs-cleaner.ts       # Actions-manager task wrapper
+├── src/**/*.test.ts              # Vitest coverage for source modules
+├── misc/
+│   └── logs-cleaner.txt          # Product requirements notes
+├── docs/
+│   ├── plans/                    # Planning notes
+│   └── plan-reviews/             # Plan review notes
+├── package.json
+├── tsconfig.json
+├── vitest.config.ts
+├── eslint.config.mjs
+├── README.md
+└── INSTRUCTIONS.md
 ```
 
 ## How It Works
 
 ```mermaid
 graph TB
-    A[Start Monitor] --> B[Confirm Settings]
-    B --> C{MongoDB Connected?}
-    C -->|No| D[Exit with Error]
-    C -->|Yes| E[Start Crawl Logic]
-
-    E --> F[Generate Search Key]
-    F --> G[Build Search Engine URL]
-    G --> H[Fetch Search Results with Puppeteer]
-
-    H --> I[Extract Links from Results]
-    I --> J[Filter Links]
-    J --> K{More Links?}
-
-    K -->|Yes| L[Fetch Page with Puppeteer]
-    L --> M[Extract Email Addresses]
-    M --> N[Validate Each Email]
-
-    N --> O{Valid Email?}
-    O -->|Yes| P[Check if Exists in DB]
-    O -->|No| Q{Can Fix Typo?}
-
-    Q -->|Yes| P
-    Q -->|No| R[Log as Invalid]
-
-    P --> S{Exists?}
-    S -->|No| T[Save to MongoDB]
-    S -->|Yes| U[Skip - Already Exists]
-
-    T --> V[Log to TXT File]
-    V --> K
-    U --> K
-    R --> K
-
-    K -->|No| W{Goal Reached?}
-    W -->|No| X[Next Process]
-    W -->|Yes| Y[End & Log Statistics]
-
-    X --> F
-
-    Y --> Z[Close Puppeteer]
-    Z --> AA[Exit Successfully]
-
-    subgraph "Email Validation"
-        N --> N1[Check Format]
-        N1 --> N2[Check Common Typos]
-        N2 --> N3[Validate Domain]
-        N3 --> N4[Gibberish Detection]
-        N4 --> N5[Final Validation]
-    end
-
-    subgraph "Monitoring"
-        BB[Monitor Process] --> CC{Timeout?}
-        CC -->|Yes| DD[Auto Restart]
-        CC -->|No| BB
-        DD --> E
-    end
+    A[Start CLI] --> B[Clean own logs]
+    B --> C{Own log entries skipped?}
+    C -->|Yes| D[Warn]
+    C -->|No| E[Continue]
+    D --> F[Load repository list]
+    E --> F
+    F --> G[Filter active repositories]
+    G --> H[Resolve cleanup targets]
+    H --> I{Target exists and is a directory?}
+    I -->|No| J[Skip target]
+    I -->|Yes| K[Clean directory contents]
+    K --> L{Transient failure?}
+    L -->|Yes| M[Retry]
+    M --> K
+    L -->|No, locked| N[Skip locked entry]
+    L -->|No, other error| O[Record failure]
+    N --> P[Continue next target]
+    O --> P
+    J --> P
+    K --> Q[Record cleaned target]
+    Q --> R{More targets?}
+    R -->|Yes| H
+    R -->|No| S[Log cleanup summary]
+    S --> T{Any failures?}
+    T -->|Yes| U[Exit with code 1]
+    T -->|No| V[Exit successfully]
 ```
 
 ## Architecture Flow
 
-1. **Monitor Layer**: Manages process lifecycle and auto-restart
-2. **Crawl Logic**: Orchestrates the crawling process
-3. **Search Service**: Generates search keys and builds search URLs
-4. **Crawl Link Service**: Fetches and extracts links from search engines
-5. **Puppeteer Service**: Handles browser automation
-6. **Crawl Email Service**: Extracts emails from page sources
-7. **Email Validation Service**: Validates and corrects emails
-8. **MongoDB Service**: Handles database operations
-9. **Log Service**: Manages console output and file logging
+1. **CLI Layer**: `runCleanup` orchestrates own-log cleanup, repository loading, target resolution, and summary logging
+2. **Repository Loader**: Reads a JSON array and keeps only entries where `type` is `active`
+3. **Target Discovery**: Resolves configured cleanup paths relative to each repository and marks unsafe targets as skipped
+4. **Path Model**: Normalizes Windows and POSIX paths without following symlinks
+5. **Cleanup Service**: Recursively removes files and nested directories while preserving the target directory
+6. **Retry Handling**: Retries transient failures and skips locked filesystem entries
+7. **Logger**: Emits structured JSON messages for console and scheduler output
+8. **Actions Manager Wrapper**: Spawns the CLI for scheduled task integration
 
 ## Email Validation Features
 
-The email validation service includes:
-
-- **Format Validation**: Checks proper email structure
-- **Typo Correction**: Automatically fixes common typos (e.g., `gmial.com` → `gmail.com`)
-- **Domain Validation**: Verifies domain endings and structure
-- **Gibberish Detection**: Filters out randomly generated strings
-- **Common Domain Recognition**: Special handling for Gmail, Hotmail, etc.
-- **Character Validation**: Removes invalid characters
-- **Length Validation**: Enforces min/max length constraints
+The current implementation does not validate email addresses. This section is retained from older crawler documentation and does not describe active project behavior.
 
 ## Console Status Example
 
-```
-===IMPORTANT SETTINGS===
-SEARCH ENGINES: bing, google
-DATABASE: crawl032021
-IS_PRODUCTION_MODE: true
-IS_DROP_COLLECTION: false
-GOAL_TYPE: MINUTES
-GOAL_VALUE: 700
-========================
+The CLI logs JSON messages rather than animated console statistics:
 
-===[SETTINGS] Mode: PRODUCTION | Plan: STANDARD | Database: crawl032021 | Active Methods: LINKS,CRAWL===
-===[GENERAL] Time: 00.00:05:23 | Goal: MINUTES | Progress: 5/700 (00.71%) | Status: CRAWL | Restarts: 0===
-===[PROCESS] Process: 3/10,000 | Page: 1/1 | Engine: Bing | Key: job developer===
-===[LINK] Crawl: ✅  15 | Total: 42 | Filter: 27 | Error: 0 | Current: 3/15===
-===[EMAIL ADDRESS] Save: ✅  12 | Total: 28 | Database: 15,927 | Exists: 14 | Invalid: ❌  2===
 ```
+{"level":"info","message":"Cleaned target.","detail":{"repoName":"actions-manager","repoPath":"C:\\Or\\web\\projects\\actions-manager","configuredPath":"logs","resolvedPath":"C:\\Or\\web\\projects\\actions-manager\\logs","status":"cleaned"}}
+{"level":"info","message":"Cleanup summary.","detail":{"repositoriesProcessed":1,"targetsSkipped":0,"targetsCleaned":1,"targetsFailed":0}}
+```
+
+Warnings and errors use the same JSON structure with `level` set to `warn` or `error`.
 
 ## Output Files
 
-All output files are saved in `dist/production/YYYYMMDD_HHMMSS/` or `dist/development/`:
-
-- `valid_email_addresses.txt` - Successfully validated emails
-- `fix_email_addresses.txt` - Emails that were auto-corrected
-- `invalid_email_addresses.txt` - Invalid emails that couldn't be fixed
-- `crawl_links.txt` - All crawled page URLs
-- `crawl_error_links.txt` - URLs that failed to load
+The current implementation does not generate crawler output files in `dist/`. Its runtime output is the filesystem cleanup it performs plus JSON log lines written to the console. Runtime data is expected to live under `db/`, including `db/paths.json` in future path-caching work, but the current code does not write that cache.
 
 ## Development
 
 ### Running Tests
 
 ```bash
-# Test email validation
-npm run val
-
-# Test link crawling
-npm run link
-
-# Test email generation
-npm run generator
-
-# Test typo correction
-npm run typos
+pnpm test:no-coverage
 ```
+
+The tests cover:
+
+- `project-repos.ts`: active repository filtering and invalid repo-list handling
+- `discovery.ts`: default and configured cleanup paths, missing targets, non-directories, and symlinks
+- `cleanup.ts`: recursive cleanup, symlink unlinking, retry behavior, and locked-file skipping
+- `index.ts`: cleanup orchestration and summary behavior
+- `path-model.ts`: Windows and POSIX path normalization
+- `actions-manager/logs-cleaner.ts`: CLI spawning and non-zero exit handling
 
 ### Development Mode
 
-Set `IS_PRODUCTION_MODE: false` in settings to:
-
-- Use local HTML sources instead of real requests
-- Test without Puppeteer
-- Avoid rate limiting from search engines
-- Debug faster without network delays
+Use `pnpm dev` for watch-mode development of the CLI. For safe behavioral testing, use the Vitest suite or call `runCleanup` with temporary repository and project roots.
 
 ## Contributing
 
 Contributions to this project are [released](https://help.github.com/articles/github-terms-of-service/#6-contributions-under-repository-license) to the public under the [project's open source license](LICENSE).
 
-Everyone is welcome to contribute. Contributing doesn't just mean submitting pull requests—there are many different ways to get involved, including answering questions and reporting issues.
+Everyone is welcome to contribute. Contributing does not only mean submitting pull requests; it can also include reporting issues, improving tests, or clarifying documentation.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
 
 ## Built With
 
 - [Node.js](https://nodejs.org/) - JavaScript runtime
-- [Puppeteer](https://pptr.dev/) - Headless browser automation
-- [MongoDB](https://www.mongodb.com/) - Database
-- [Mongoose](https://mongoosejs.com/) - MongoDB object modeling
-- [Axios](https://axios-http.com/) - HTTP client
-- [forever-monitor](https://github.com/foreversd/forever-monitor) - Process monitoring
+- [TypeScript](https://www.typescriptlang.org/) - Strictly typed implementation
+- [pnpm](https://pnpm.io/) - Package manager
+- [Vitest](https://vitest.dev/) - Test runner and coverage tool
+- [ESLint](https://eslint.org/) - Linting
+- [Prettier](https://prettier.io/) - Formatting
 
 ## License
 
@@ -340,7 +271,6 @@ This application has an MIT license - see the [LICENSE](LICENSE) file for detail
 
 ## Acknowledgments
 
-- Built for educational and research purposes
-- Respects robots.txt and implements rate limiting
-- Uses user-agent rotation to avoid detection
-- Implements polite crawling practices
+- Built for local repository maintenance and scheduled cleanup tasks
+- Designed to run on Windows while preserving cross-platform path support
+- Uses structured logging so scheduler integrations can parse results consistently

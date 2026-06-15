@@ -5,318 +5,310 @@
 1. Open the project in your IDE (VSCode recommended)
 2. Install dependencies:
    ```bash
-   npm install
+   pnpm install
    ```
-3. Ensure MongoDB is installed and running locally on `mongodb://localhost:27017/`
+3. Prepare a repository list JSON file with an array of project entries
+4. Confirm that each active repository exists under the configured projects root
 
 ## Prerequisites
 
-- Node.js (v14 or higher)
-- MongoDB (v4 or higher)
-- Internet connection (for production mode)
+- Node.js v20 or higher
+- pnpm v8 or higher
+- Local access to the repository list file
+- Local access to each repository path resolved from the projects root
+- No MongoDB, Puppeteer, or search-engine access is required
 
 ## Configuration
 
 ### Main Settings
 
-Open `src/settings/settings.js` and configure according to your needs:
+Configuration is defined by constants in `src/config.ts` and by the repository list JSON file. The app does not currently read a separate settings file.
 
 #### Production vs Development Mode
 
-- `IS_PRODUCTION_MODE`: Set to `true` for real crawling with Puppeteer, `false` for testing with local sources
-- **Important**: Run `npm run preload` after changing this setting to install/remove Puppeteer package
+`logs-cleaner` does not have production and development modes. `pnpm start` runs the cleanup CLI directly, and `pnpm dev` runs it in watch mode.
 
 #### Goal Settings
 
-- `GOAL_TYPE`: Choose from `EMAIL_ADDRESSES`, `MINUTES`, or `LINKS`
-- `GOAL_VALUE`: Set the target value (e.g., 1000 email addresses, 700 minutes, 500 links)
+There are no goal settings. The CLI processes every active repository in the configured list and cleans every discovered cleanup target.
 
 #### Method Settings
 
-- `IS_LINKS_METHOD_ACTIVE`: Enable/disable link crawling from search engines
-- `IS_CRAWL_METHOD_ACTIVE`: Enable/disable email address extraction from pages
+There are no link-crawling or email-extraction methods. The only active method is filesystem cleanup of configured directory targets.
 
 #### MongoDB Settings
 
-- `IS_DROP_COLLECTION`: Set to `true` to clear the database before starting (use for testing)
-- `MONGO_DATABASE_NAME`: Database name (default: `crawl`)
-- `MONGO_DATABASE_COLLECTION_NAME`: Collection name (default: `emailaddresses`)
+MongoDB is not used by this project.
 
 #### Search Settings
 
-- `SEARCH_KEY`: Set a static search term, or leave as `null` for random search keys
-- `IS_ADVANCE_SEARCH_KEYS`: Use advanced Hebrew search keys (`true`) or basic static keys (`false`)
+Search engines and search keys are not used by this project. The repository list is a local JSON file, not a web-search result set.
 
 #### Process Limits
 
-- `MAXIMUM_SEARCH_PROCESSES_COUNT`: Number of processes to run (default: 10000 for long runs)
-- `MAXIMUM_SEARCH_ENGINE_PAGES_PER_PROCESS_COUNT`: Pages to crawl per process (default: 1)
-- `MAXIMUM_MINUTES_WITHOUT_UPDATE`: Restart if no progress for X minutes (default: 20)
+Retry behavior is controlled by constants in `src/config.ts`:
+
+- `RETRY_ATTEMPTS`: Number of cleanup attempts for a path, default `3`
+- `RETRY_DELAY_MS`: Delay between retry attempts in milliseconds, default `100`
 
 #### Logging Options
 
-- `IS_LOG_VALID_EMAIL_ADDRESSES`: Log valid emails to TXT file
-- `IS_LOG_FIX_EMAIL_ADDRESSES`: Log fixed emails to TXT file
-- `IS_LOG_INVALID_EMAIL_ADDRESSES`: Log invalid emails to TXT file
-- `IS_LOG_CRAWL_LINKS`: Log crawled links to TXT file
+Logging is handled by `src/logger.ts`. Every message is emitted as a JSON line with:
+
+- `level`: `info`, `warn`, or `error`
+- `message`: Human-readable event name
+- `detail`: Optional structured event data
 
 ### Search Engines Configuration
 
-Edit `src/configurations/files/searchEngines.configuration.js`:
-
-- Configure active search engines (Bing, Google)
-- Set URL patterns and query parameters
-- Enable/disable specific engines
+Search engine configuration is not applicable. Repository discovery uses the local repository list instead.
 
 ### Search Keys Configuration
 
-Edit `src/configurations/files/searchKeys.configuration.js`:
-
-- `basicSearchKeys`: Static search terms
-- `advanceSearchKeys`: Dynamic Hebrew search key generation rules
+Search key configuration is not applicable. Cleanup targets come from each repository's `clear` array or from the default `logs` path.
 
 ### Filter Configurations
 
+Filtering is applied to repository entries and cleanup targets:
+
+- `project-repos.ts` keeps only entries where `type` is `active`
+- `discovery.ts` skips missing paths, non-directory paths, and symlinked cleanup targets
+- `cleanup.ts` skips locked entries reported as `EBUSY` or `EPERM`
+
 #### Email Address Filters
 
-Edit `src/configurations/files/filterEmailAddress.configuration.js`:
-
-- `filterEmailAddressDomains`: Domain parts to filter out
-- `filterEmailAddresses`: Specific email addresses to exclude
+Email address filters are not applicable. The project does not collect or validate email addresses.
 
 #### Link Filters
 
-Edit `src/configurations/files/filterLinkDomains.configuration.js`:
-
-- `globalFilterLinkDomains`: Domains to filter from all search engines
-- `filterLinkDomains`: Search engine-specific domain filters
+Link filters are not applicable. The project does not crawl web links.
 
 #### File Extension Filters
 
-Edit `src/configurations/files/filterFileExtensions.configuration.js`:
-
-- `filterLinkFileExtensions`: File extensions to skip when crawling (e.g., `.pdf`, `.jpg`)
+File extension filters are not applicable. Cleanup removes all contents inside configured directory targets.
 
 ### Email Domain Configurations
 
-Edit `src/configurations/files/emailAddressDomainsList.configuration.js`:
-
-- List of common email domains (Gmail, Hotmail, etc.)
-- Typo correction mappings
-- Domain validation rules
+Email domain configuration is not applicable. The project does not perform email validation or typo correction.
 
 ## Running Scripts
 
 ### Main Crawler (with Monitor)
 
-Starts the crawler with automatic restart on failure:
+Starts the cleanup CLI:
 
 ```bash
-npm start
+pnpm start
 ```
 
-This launches the monitor which:
+This command:
 
-- Shows confirmation screen with current settings
-- Automatically restarts on errors/timeout
-- Tracks progress and statistics
-- Logs all data to `dist/production/` or `dist/development/`
+- Cleans the app's own log directory first
+- Loads the configured repository list
+- Filters repository entries to active projects only
+- Resolves cleanup targets for each active repository
+- Recursively removes contents inside each valid cleanup directory
+- Logs structured JSON messages for skipped, cleaned, failed, and summary events
+- Exits with code `1` if any cleanup target fails for a non-locked reason
 
 ### Backup
 
-Creates a backup of the project:
-
-```bash
-npm run backup
-```
+A backup script is not implemented.
 
 ### Domain Counter
 
-Counts email address domains from files or MongoDB:
-
-```bash
-npm run domains
-```
+A domain counter script is not implemented.
 
 ### Tests
 
 #### Validate Single Email
 
-Tests email validation logic:
+Email validation is not implemented. Run the cleanup tests instead:
 
 ```bash
-npm run val
+pnpm test:no-coverage
 ```
 
 #### Validate Multiple Emails
 
-Validates a batch of email addresses:
+Email validation is not implemented. The Vitest suite runs all repository, discovery, cleanup, and CLI tests.
 
 ```bash
-npm run valmany
+pnpm test:no-coverage
 ```
 
 #### Debug Email Validation
 
-Runs validation with Node.js inspector:
+Email validation is not implemented. Use `pnpm dev` to run the CLI in watch mode while debugging cleanup behavior.
 
 ```bash
-npm run valdebug
+pnpm dev
 ```
 
 #### Test Typos
 
-Tests email typo detection and correction:
+Typo correction is not implemented. Path normalization is tested in `path-model.test.ts`.
 
 ```bash
-npm run typos
+pnpm test:no-coverage src/path-model.test.ts
 ```
 
 #### Test Link Crawling
 
-Tests crawling links from a specific page:
+Link crawling is not implemented. Cleanup behavior is tested in `cleanup.test.ts`.
 
 ```bash
-npm run link
+pnpm test:no-coverage src/cleanup.test.ts
 ```
 
 #### Test Session Links
 
-Tests crawling multiple predefined links:
+Session link crawling is not implemented. Cleanup orchestration is tested in `index.test.ts`.
 
 ```bash
-npm run session
+pnpm test:no-coverage src/index.test.ts
 ```
 
 #### Email Generator Test
 
-Tests random email address generation:
+Email generation is not implemented. Repository target discovery is tested in `discovery.test.ts`.
 
 ```bash
-npm run generator
+pnpm test:no-coverage src/discovery.test.ts
 ```
 
 #### Test Cases
 
-Runs comprehensive email validation test cases:
+Run the full test suite:
 
 ```bash
-npm run cases
+pnpm test:no-coverage
 ```
 
 #### Sandbox
 
-General testing sandbox:
-
-```bash
-npm run sand
-```
+Use temporary repository and project roots when manually testing cleanup behavior. Avoid running the default CLI against real repositories until the configured paths are correct.
 
 ## Quick Start Guide
 
 ### For Testing (Development Mode)
 
-1. Open `src/settings/settings.js`
-2. Set `IS_PRODUCTION_MODE: false`
-3. Set `GOAL_TYPE: GoalTypeEnum.EMAIL_ADDRESSES`
-4. Set `GOAL_VALUE: 10`
-5. Set `IS_LONG_RUN: false`
-6. Run: `npm start`
+1. Run the test suite:
+
+```bash
+pnpm test:no-coverage
+```
+
+2. Create a temporary repository list containing an active repository object
+3. Create a temporary projects root containing that repository
+4. Create a `logs` directory inside the repository
+5. Call `runCleanup` with the temporary `repoListPath`, `projectsRoot`, and `ownLogsPath` values
 
 ### For Production Crawling
 
-1. Open `src/settings/settings.js`
-2. Set `IS_PRODUCTION_MODE: true`
-3. Run: `npm run preload` (installs Puppeteer)
-4. Configure search engines in `searchEngines.configuration.js`
-5. Configure search keys in `searchKeys.configuration.js`
-6. Configure filters as needed
-7. Ensure MongoDB is running
-8. Run: `npm start`
-9. Confirm settings when prompted (type `y`)
+Production crawling is not applicable. For live cleanup, configure the repository list and run:
+
+```bash
+pnpm start
+```
+
+A repository entry can use the default cleanup path:
+
+```json
+[
+  {
+    "name": "actions-manager",
+    "type": "active"
+  }
+]
+```
+
+Or it can specify explicit cleanup paths:
+
+```json
+[
+  {
+    "name": "daily-events-bot",
+    "type": "active",
+    "clear": ["db", "logs"]
+  }
+]
+```
 
 ## File Structure
 
 ### Source Files (`src/`)
 
-- `monitor/monitor.js` - Main entry point with restart monitoring
-- `scripts/crawl.script.js` - Crawling script logic
-- `logics/crawl.logic.js` - Core crawling orchestration
-- `services/` - Business logic services
-- `configurations/` - Configuration files
-- `settings/settings.js` - Main settings file
-- `utils/` - Utility functions
-- `core/` - Models and enums
+- `index.ts` - CLI entry point and cleanup orchestration
+- `config.ts` - Default paths and retry settings
+- `types.ts` - Shared TypeScript types
+- `project-repos.ts` - Repository list loading and active-entry filtering
+- `discovery.ts` - Cleanup target resolution
+- `cleanup.ts` - Recursive directory-content cleanup
+- `path-model.ts` - Windows and POSIX path normalization
+- `logger.ts` - JSON line logging helper
+- `actions-manager/logs-cleaner.ts` - Actions-manager task wrapper
+- `*.test.ts` - Vitest coverage for source modules
 
 ### Output Files (`dist/`)
 
-Generated files are placed in `dist/production/` or `dist/development/` with date-based subdirectories:
-
-- `valid_email_addresses.txt` - Valid emails found
-- `fix_email_addresses.txt` - Emails that were corrected
-- `invalid_email_addresses.txt` - Invalid emails
-- `crawl_links.txt` - Links crawled
-- `crawl_error_links.txt` - Links that failed
+The current implementation does not generate crawler output files in `dist/`. Its runtime output is the filesystem cleanup it performs plus JSON log lines written to the console.
 
 ## Understanding the Console Status Line
 
-When running, you'll see a real-time status line with:
+When running, you'll see JSON log lines rather than animated status rows:
 
 ```
-===[SETTINGS] Mode: PRODUCTION | Plan: STANDARD | Database: crawl | Drop: false | Long: true | Active Methods: LINKS,CRAWL===
-===[GENERAL] Time: 00.00:00:12 [\] | Goal: MINUTES | Progress: 0/700 (00.00%) | Status: CRAWL | Restarts: 0===
-===[PROCESS] Process: 1/10,000 | Page: 1/1 | Engine: Bing | Key: search term===
-===[LINK] Crawl: ✅  13 | Total: 40 | Filter: 27 | Error: 0 | Error In A Row: 0 | Current: 2/13===
-===[EMAIL ADDRESS] Save: ✅  0 | Total: 2 | Database: 15,915 | Exists: 1 | Invalid: ❌  0 | Valid Fix: 0 | Invalid Fix: 0 | Unsave: 0 | Filter: 0 | Skip: 0 | Gibberish: 0===
+{"level":"info","message":"Cleaned target.","detail":{"repoName":"actions-manager","repoPath":"C:\\Or\\web\\projects\\actions-manager","configuredPath":"logs","resolvedPath":"C:\\Or\\web\\projects\\actions-manager\\logs","status":"cleaned"}}
+{"level":"info","message":"Cleanup summary.","detail":{"repositoriesProcessed":1,"targetsSkipped":0,"targetsCleaned":1,"targetsFailed":0}}
 ```
 
-- **SETTINGS**: Current mode and configuration
-- **GENERAL**: Runtime, goal progress, current status
-- **PROCESS**: Process number, page number, search engine, search key
-- **LINK**: Link crawling statistics
-- **EMAIL ADDRESS**: Email collection statistics
+- **`level`**: Log severity, either `info`, `warn`, or `error`
+- **`message`**: Event type, such as `Skipped cleanup target.`, `Cleaned target.`, or `Cleanup summary.`
+- **`detail`**: Structured data for the event, including target paths, failure details, or summary counters
 
 ## Troubleshooting
 
 ### Application Won't Start
 
-- Ensure MongoDB is running: `mongod`
-- Check Node version: `node --version` (should be v14+)
-- Delete `node_modules` and run `npm install` again
+- Check Node version: `node --version` should be v20 or higher
+- Check pnpm version: `pnpm --version` should be v8 or higher
+- Confirm dependencies are installed: `pnpm install`
+- Confirm the repository list file exists at the configured path
+- Confirm the repository list root JSON value is an array
 
 ### No Email Addresses Being Found
 
-- Check if search engines changed their HTML structure
-- Verify internet connection
-- Check filter configurations (might be too aggressive)
-- Examine `dist/.../crawl_error_links.txt` for errors
+Email collection is not implemented. If no cleanup targets are found, check that:
+
+- The repository entry has `type: "active"`
+- The repository name resolves under the configured projects root
+- The cleanup target exists
+- The cleanup target is a directory
+- The cleanup target is not a symlink
 
 ### Puppeteer Errors
 
-- Ensure Chromium dependencies are installed (Linux)
-- Try running with `IS_PRODUCTION_MODE: false` first
-- Check for antivirus interference
+Puppeteer is not used by this project.
 
 ### MongoDB Connection Errors
 
-- Verify MongoDB is running: `mongo` command should work
-- Check connection string in settings
-- Ensure MongoDB port 27017 is not blocked
+MongoDB is not used by this project.
 
 ### Application Keeps Restarting
 
-- Check `MAXIMUM_MINUTES_WITHOUT_UPDATE` setting
-- Increase timeout values if network is slow
-- Review error logs in dist directory
+The current CLI does not include an auto-restart monitor. If it is invoked by Windows Task Scheduler or an actions-manager task, check the scheduler logs and the JSON error detail emitted by the CLI.
 
 ## Important Notes
 
-- Always run `npm run preload` when switching between production and development modes
-- The application automatically restarts on errors (up to 50 times)
-- All email addresses are validated and can be auto-corrected for common typos
-- Gibberish detection is enabled by default to filter out invalid data
-- Links are filtered to avoid duplicates and unwanted domains
-- Downloads folder is automatically cleaned between processes
+- Only repository entries with `type: "active"` are processed
+- Repositories without a `clear` field clean the default `logs` path
+- Repositories with a `clear` array clean exactly those relative paths
+- Cleanup removes contents recursively while preserving the cleanup target directory itself
+- Symlinked cleanup targets are skipped and are not followed
+- Locked entries are skipped instead of failing the whole cleanup
+- Non-locked cleanup failures are recorded and cause the CLI to exit with code `1`
+- The app logs JSON lines, which is useful for scheduled task output
 
 ## Author
 
