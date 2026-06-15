@@ -2,44 +2,62 @@
 
 ## Context
 
-`logs-cleaner` is a Node.js/TypeScript command-line utility that scans configured local repositories, finds log directories, removes their contents, and records discovered cleanup paths in a local cache for faster future runs.
+`logs-cleaner` is a Node.js/TypeScript command-line utility that scans configured local repositories, finds configured cleanup paths, removes their contents, and supports being triggered from the actions-manager Windows Scheduler integration.
 
 The product requirements come from `misc/logs-cleaner.txt`. The existing `README.md` and `INSTRUCTIONS.md` files belong to another project and should not be treated as source of truth for this implementation.
 
 ## Requirements
 
 - Scan repositories from `C:\Or\web\project-repos-names.json`.
+- The repo-list file must exist. If it is missing or unreadable, throw an error and exit.
+- Parse the repo-list file as JSON.
 - Filter only entries where `type === "active"`.
-- For each active project, find a `logs` directory in either:
-  - repository root, or
-  - `src/logs`.
-- If no logs path exists, skip the project.
-- Clean the contents of discovered logs paths, preserving the target directory itself.
-- Retry failed cleanup operations; if a file is locked/in use, skip that path/file.
-- Clean this tool's own previous logs before the current session logs.
-- Support a generic extra cleanup path for `daily-events-bot`, specifically its `db` directory.
-- Support Windows and macOS paths.
-- Cache discovered cleanup paths in `db/paths.json`, keyed by project name with arrays of paths.
-- On later runs, use cached paths first; if a cached path is missing, rescan root and `src/logs`, then remove stale cache entries.
-- Provide an actions-manager integration file pattern using `spawnSync('pnpm', ['run', 'start', '--', 'AUTO'])`.
+- Resolve each project by local directory name: the entry `name` matches the same directory name under the local projects root.
+- Each repo entry may include a `clear` array. Each path in `clear` is a cleanup target relative to that repository.
+- Example repo entry shape:
+
+```json
+{
+  "name": "actions-manager",
+  "url": "https://github.com/orassayag/actions-manager",
+  "type": "active",
+  "purpose": "personal",
+  "structure": "single",
+  "clear": ["logs", "db", "src/other-path"]
+}
+```
+
+- If `clear` is absent, default to `["logs"]`.
+- If a configured cleanup target is missing or is not an existing directory, skip that target.
+- Clean the contents of discovered target directories, preserving the target directory itself.
+- Delete the entire content of each target directory regardless of what is inside it.
+- Do not follow symlinked directories. Unlink symlink entries without traversing into their targets, and reject symlinked cleanup targets.
+- Clean this tool's own previous logs before the current session starts. This app's logs live in the root `logs` folder.
+- Do not target the currently open log file.
+- Retry failed cleanup operations with bounded attempts and backoff.
+- Treat locked/in-use files as skipped rather than fatal.
+- Process repositories one by one, not in parallel.
+- Support Windows and macOS paths through a path model appropriate for the current operating system.
 
 ## Resolved decisions
 
-- `db/paths.json` should be generated locally and ignored by git.
-- Cleanup should delete only the contents of each target directory, preserving the target directory itself.
-- The CLI should default to the Windows-specific repo list path `C:\Or\web\project-repos-names.json`, with an optional `--repos <path>` override.
+- Cleanup targets must be existing directories. Missing or non-directory targets are skipped.
+- The CLI has no dry/live mode distinction and no `AUTO` flag.
+- The repo-list file is required and must exist before cleanup starts.
+- The `clear` array is the source of truth for cleanup targets. If it is absent, `logs` is cleaned.
+- The actions-manager integration file should call the cleanup script directly, without `AUTO` or dry-mode parameters.
 
 ## Recommended implementation approach
 
 Create a small, service-oriented CLI structure:
 
-- `src/index.ts`: parse CLI args, select dry/live mode, and orchestrate the cleanup flow.
-- `src/types.ts`: shared domain types for project repo entries, cleanup targets, cache records, results, and action definitions.
-- `src/config.ts`: constants and path resolution for the repo list path, cache path, default logs candidates, and extra cleanup paths.
-- `src/project-repos.ts`: load and filter `project-repos-names.json`.
-- `src/path-cache.ts`: read/write `db/paths.json`, add discovered paths, and remove stale entries.
-- `src/discovery.ts`: discover `logs` paths from cache or filesystem scan, including extra paths such as `daily-events-bot/db`.
-- `src/cleanup.ts`: recursively clean path contents with retries, locked-file handling, and dry-mode reporting.
+- `src/index.ts`: parse CLI args, load configuration, orchestrate the cleanup flow, and exit with an error if required inputs are missing.
+- `src/types.ts`: shared domain types for project repo entries, cleanup targets, cleanup results, and action definitions.
+- `src/config.ts`: constants and path resolution for the repo-list path, local projects root, default `clear` paths, own log path, retry settings, and concurrency settings.
+- `src/project-repos.ts`: load, validate, and filter `project-repos-names.json`.
+- `src/path-model.ts`: normalize and resolve local paths for the current OS using a small path-normalization layer.
+- `src/discovery.ts`: resolve configured `clear` paths under each matched repository and reject unsafe symlinked targets.
+- `src/cleanup.ts`: recursively clean directory contents with retries, locked-file handling, symlink-safe traversal, and sequential per-repository processing.
 - `src/logger.ts`: simple structured console output for skipped, cleaned, failed, and summary results.
 - `src/actions-manager/logs-cleaner.ts`: action-manager integration file to copy into the actions-manager repo later.
 
@@ -48,21 +66,17 @@ Tests should be colocated with source as `*.test.ts` or grouped under `src/__tes
 ## Important implementation details
 
 - Use Node `fs/promises` for async filesystem traversal and deletion.
-- For cleanup paths:
-  - If the path is missing, mark it skipped.
-  - If it is a directory, delete its entries recursively but preserve the directory itself.
-  - If it is a file, unlink it.
-  - Retry failures with bounded attempts and backoff.
-  - Treat `EBUSY` / `EPERM` as locked/skipped rather than fatal.
-- Default CLI scripts should remain:
-  - `pnpm start`: dry mode by default.
-  - `pnpm start:live`: actual deletion.
-  - `pnpm start:no-cache`: force rescanning.
-  - `pnpm sync`: run with `AUTO`.
-- Treat `AUTO` as non-interactive mode for actions-manager.
-- Add a future-friendly optional config override, for example `--repos <path>`, but do not overbuild configuration beyond the mini-plan.
-- Normalize paths with Node path utilities and keep Windows/macOS-specific paths configurable rather than hard-coded into cleanup logic.
-- Add `db/` to `.gitignore` so the generated cache file is not committed.
+- Use `lstat`/`symlink` checks during traversal so symlinked directories are not followed.
+- For cleanup targets:
+  - If the target is missing, mark it skipped.
+  - If it is not a directory, mark it skipped.
+  - If it is a symlinked cleanup target, mark it skipped.
+  - If it is a safe directory, delete its entries recursively and preserve the directory itself.
+- Retry transient cleanup failures with a bounded attempt count, a small fixed backoff delay, and a summary of partial failures.
+- Treat `EBUSY` / `EPERM` as locked/skipped rather than fatal.
+- Process repositories sequentially to avoid IO thrashing and locked-file storms.
+- The actions-manager integration file should call the cleanup script directly and throw only if the child process exits non-zero or fails to spawn.
+- Normalize paths with Node path utilities and keep Windows/macOS-specific paths configurable through the repo-list file and local project directory names.
 
 ## Verification plan
 
@@ -72,12 +86,17 @@ Tests should be colocated with source as `*.test.ts` or grouped under `src/__tes
 4. Run `pnpm format:check` for formatting validation.
 5. Run `pnpm test` for Vitest coverage.
 6. Add fixture-based tests for:
+   - missing repo-list file exits with an error,
    - filtering active vs inactive project entries,
-   - discovering root `logs` and `src/logs`,
-   - using cached paths and removing stale entries,
-   - dry mode not mutating fixtures,
-   - live mode deleting only contents,
+   - resolving local repositories by matching entry `name` to directory name,
+   - resolving `clear` paths relative to each repository,
+   - defaulting missing `clear` to `logs`,
+   - skipping missing or non-directory cleanup targets,
+   - deleting all contents of target directories while preserving the directory itself,
+   - rejecting symlinked cleanup targets,
+   - unlinking symlink entries without following symlinked directories,
    - retrying transient cleanup failures,
    - skipping locked files,
-   - adding the `daily-events-bot/db` extra cleanup path.
-7. Manually verify `pnpm start` logs planned cleanup without deleting, then verify `pnpm start:live` deletes expected fixture contents.
+   - cleaning this app's root `logs` folder before repository cleanup,
+   - processing repositories sequentially.
+7. Manually verify the actions-manager integration file calls the correct script without `AUTO` or dry-mode parameters and handles nonzero exit codes.

@@ -1,12 +1,14 @@
 {
   "cSpell.words": [
     "Assayag",
+    "backpressure",
     "EBUSY",
     "EPERM",
     "msvc",
     "orassayag",
     "rescan",
-    "rescanning"
+    "rescanning",
+    "underspecified"
   ],
   "cSpell.ignorePaths": [
     "coverage",
