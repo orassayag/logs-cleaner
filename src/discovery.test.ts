@@ -96,6 +96,27 @@ describe('resolveCleanupTargets', () => {
       }),
     ]);
   });
+
+  it('rethrows unexpected filesystem errors', async () => {
+    const projectsRoot = await createTempDir();
+    await createRepo(projectsRoot, 'actions-manager');
+
+    await expect(
+      resolveCleanupTargets(
+        { name: 'actions-manager', type: 'active' },
+        projectsRoot,
+        {
+          lstat: () => {
+            const error = new Error(
+              'permission denied'
+            ) as NodeJS.ErrnoException;
+            error.code = 'EACCES';
+            return Promise.reject(error);
+          },
+        }
+      )
+    ).rejects.toMatchObject({ code: 'EACCES' });
+  });
 });
 
 async function createRepo(projectsRoot: string, name: string): Promise<string> {

@@ -108,6 +108,149 @@ describe('cleanDirectoryContents', () => {
     expect(result.skippedPaths).toEqual([filePath]);
     expect(result.failures).toEqual([]);
   });
+
+  it('skips entries whose lstat reports a locked resource', async () => {
+    const targetPath = await createTarget();
+    const filePath = path.join(targetPath, 'locked.txt');
+    await writeFile(filePath, 'content');
+
+    const result = await cleanDirectoryContents(
+      targetPath,
+      { retryDelayMs: 0 },
+      {
+        ...fs,
+        lstat: (entryPath) => {
+          if (entryPath === filePath) {
+            const error = new Error('busy') as NodeJS.ErrnoException;
+            error.code = 'EBUSY';
+            return Promise.reject(error);
+          }
+
+          return fs.lstat(entryPath);
+        },
+      }
+    );
+
+    expect(result.skippedPaths).toEqual([filePath]);
+    expect(result.failures).toEqual([]);
+  });
+
+  it('records a failure when lstat fails unexpectedly', async () => {
+    const targetPath = await createTarget();
+    const filePath = path.join(targetPath, 'file.txt');
+    await writeFile(filePath, 'content');
+
+    const result = await cleanDirectoryContents(
+      targetPath,
+      { retryDelayMs: 0 },
+      {
+        ...fs,
+        lstat: (entryPath) => {
+          if (entryPath === filePath) {
+            const error = new Error('io failure') as NodeJS.ErrnoException;
+            error.code = 'EIO';
+            return Promise.reject(error);
+          }
+
+          return fs.lstat(entryPath);
+        },
+      }
+    );
+
+    expect(result.failures).toEqual([
+      { path: filePath, reason: 'io failure', code: 'EIO' },
+    ]);
+  });
+
+  it('skips a directory whose contents cannot be listed due to a lock', async () => {
+    const targetPath = await createTarget();
+    const nestedPath = path.join(targetPath, 'nested');
+    await mkdir(nestedPath);
+
+    const result = await cleanDirectoryContents(
+      targetPath,
+      { retryDelayMs: 0 },
+      {
+        ...fs,
+        readdir: ((entryPath: string, options: unknown) => {
+          if (entryPath === nestedPath) {
+            const error = new Error('busy') as NodeJS.ErrnoException;
+            error.code = 'EBUSY';
+            return Promise.reject(error);
+          }
+
+          return fs.readdir(entryPath, options as never);
+        }) as typeof fs.readdir,
+      }
+    );
+
+    expect(result.skippedPaths).toEqual([nestedPath]);
+    expect(result.failures).toEqual([]);
+  });
+
+  it('records a failure when a directory cannot be listed unexpectedly', async () => {
+    const targetPath = await createTarget();
+    const nestedPath = path.join(targetPath, 'nested');
+    await mkdir(nestedPath);
+
+    const result = await cleanDirectoryContents(
+      targetPath,
+      { retryDelayMs: 0 },
+      {
+        ...fs,
+        readdir: ((entryPath: string, options: unknown) => {
+          if (entryPath === nestedPath) {
+            const error = new Error('io failure') as NodeJS.ErrnoException;
+            error.code = 'EIO';
+            return Promise.reject(error);
+          }
+
+          return fs.readdir(entryPath, options as never);
+        }) as typeof fs.readdir,
+      }
+    );
+
+    expect(result.failures).toEqual([
+      { path: nestedPath, reason: 'io failure', code: 'EIO' },
+    ]);
+  });
+
+  it('leaves excluded paths untouched', async () => {
+    const targetPath = await createTarget();
+    const excludedFile = path.join(targetPath, 'current.log');
+    await writeFile(excludedFile, 'active');
+
+    const result = await cleanDirectoryContents(targetPath, {
+      retryDelayMs: 0,
+      excludedPaths: new Set([excludedFile]),
+    });
+
+    expect(result.cleanedPaths).toEqual([]);
+    await expect(fs.access(excludedFile)).resolves.toBeUndefined();
+  });
+
+  it('records a failure when a deletion keeps failing', async () => {
+    const targetPath = await createTarget();
+    const filePath = path.join(targetPath, 'file.txt');
+    await writeFile(filePath, 'content');
+
+    const result = await cleanDirectoryContents(
+      targetPath,
+      { retryDelayMs: 0, maxAttempts: 2 },
+      {
+        ...fs,
+        unlink: () => {
+          const error = new Error('io failure') as NodeJS.ErrnoException;
+          error.code = 'EIO';
+          return Promise.reject(error);
+        },
+      }
+    );
+
+    expect(result.failures).toEqual([
+      { path: filePath, reason: 'io failure', code: 'EIO' },
+    ]);
+  });
 });
 
 async function createTarget(): Promise<string> {

@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -6,8 +6,14 @@ import { runCleanup } from './index.js';
 import { promises as fs } from 'node:fs';
 
 const tempDirs: string[] = [];
+const readonlyDirs: string[] = [];
 
 afterEach(async () => {
+  await Promise.all(
+    readonlyDirs
+      .splice(0)
+      .map((dir) => chmod(dir, 0o700).catch(() => undefined))
+  );
   await Promise.all(
     tempDirs
       .splice(0)
@@ -79,6 +85,28 @@ describe('runCleanup', () => {
     await expect(fs.readdir(customPath)).resolves.toEqual([]);
   });
 
+  it('records failures for unwritable paths and skips missing targets', async () => {
+    const projectsRoot = await createTempDir();
+    const repoListPath = await writeRepoList(projectsRoot, [
+      { name: 'daily-events-bot', type: 'active', clear: ['missing'] },
+    ]);
+    await createRepo(projectsRoot, 'daily-events-bot');
+    const ownLogsPath = await createUnwritableLogs();
+    const customPath = await createUnwritableLogs();
+
+    const summary = await runCleanup({
+      repoListPath,
+      projectsRoot,
+      ownLogsPath,
+      customCleanPaths: [customPath],
+      retryDelayMs: 0,
+    });
+
+    expect(summary.ownLogsFailures.length).toBeGreaterThan(0);
+    expect(summary.customPathsFailures.length).toBeGreaterThan(0);
+    expect(summary.targetsSkipped).toBeGreaterThan(0);
+  });
+
   it('rejects a missing repo-list file', async () => {
     await expect(
       runCleanup({
@@ -110,6 +138,16 @@ async function createOwnLogs(): Promise<string> {
   const ownLogsPath = path.join(tempDir, 'logs');
   await mkdir(ownLogsPath);
   return ownLogsPath;
+}
+
+async function createUnwritableLogs(): Promise<string> {
+  const tempDir = await createTempDir();
+  const logsPath = path.join(tempDir, 'logs');
+  await mkdir(logsPath);
+  await writeFile(path.join(logsPath, 'locked.log'), 'content');
+  await chmod(logsPath, 0o500);
+  readonlyDirs.push(logsPath);
+  return logsPath;
 }
 
 async function createTempDir(): Promise<string> {
