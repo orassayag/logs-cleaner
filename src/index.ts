@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  DEFAULT_CUSTOM_CLEAN_PATHS,
   DEFAULT_PROJECTS_ROOT,
   DEFAULT_REPO_LIST_PATH,
   OWN_LOGS_PATH,
@@ -10,7 +11,7 @@ import {
 import { cleanDirectoryContents } from './cleanup.js';
 import { resolveCleanupTargets } from './discovery.js';
 import { log } from './logger.js';
-import { resolveRelativePath } from './path-model.js';
+import { normalizeConfiguredPath, resolveRelativePath } from './path-model.js';
 import { loadProjectRepos } from './project-repos.js';
 import type { CleanupSummary, RunCleanupOptions } from './types.js';
 
@@ -20,6 +21,8 @@ export async function runCleanup(
   const repoListPath = options.repoListPath ?? DEFAULT_REPO_LIST_PATH;
   const projectsRoot = options.projectsRoot ?? DEFAULT_PROJECTS_ROOT;
   const ownLogsPath = options.ownLogsPath ?? OWN_LOGS_PATH;
+  const customCleanPaths =
+    options.customCleanPaths ?? DEFAULT_CUSTOM_CLEAN_PATHS;
   const currentLogFile = options.currentLogFile;
   const excludedPaths = currentLogFile ? new Set([currentLogFile]) : undefined;
   const ownLogsTarget = resolveRelativePath(process.cwd(), ownLogsPath);
@@ -38,6 +41,9 @@ export async function runCleanup(
     targetsFailed: 0,
     ownLogsSkipped: ownLogsResult.skippedPaths,
     ownLogsFailures: ownLogsResult.failures,
+    customCleanPaths,
+    customPathsSkipped: [],
+    customPathsFailures: [],
   };
 
   if (ownLogsResult.skippedPaths.length > 0) {
@@ -53,6 +59,36 @@ export async function runCleanup(
       level: 'error',
       message: 'Failed to clean own log entries.',
       detail: ownLogsResult.failures,
+    });
+  }
+
+  for (const customCleanPath of customCleanPaths) {
+    const resolvedCustomPath = normalizeConfiguredPath(customCleanPath);
+    const customResult = await cleanDirectoryContents(resolvedCustomPath, {
+      maxAttempts: options.retryAttempts ?? RETRY_ATTEMPTS,
+      retryDelayMs: options.retryDelayMs ?? RETRY_DELAY_MS,
+      excludedPaths,
+    });
+
+    if (customResult.failures.length > 0) {
+      summary.customPathsFailures.push(...customResult.failures);
+      log({
+        level: 'error',
+        message: 'Failed to clean custom path.',
+        detail: { path: resolvedCustomPath, failures: customResult.failures },
+      });
+      continue;
+    }
+
+    summary.customPathsSkipped.push(...customResult.skippedPaths);
+    log({
+      level: 'info',
+      message: 'Cleaned custom path.',
+      detail: {
+        path: resolvedCustomPath,
+        cleanedPaths: customResult.cleanedPaths,
+        skippedPaths: customResult.skippedPaths,
+      },
     });
   }
 
@@ -111,7 +147,10 @@ export async function runCleanup(
   }
 
   log({
-    level: summary.targetsFailed > 0 ? 'error' : 'info',
+    level:
+      summary.targetsFailed > 0 || summary.customPathsFailures.length > 0
+        ? 'error'
+        : 'info',
     message: 'Cleanup summary.',
     detail: summary,
   });
@@ -123,7 +162,7 @@ async function main(): Promise<void> {
   try {
     const summary = await runCleanup();
 
-    if (summary.targetsFailed > 0) {
+    if (summary.targetsFailed > 0 || summary.customPathsFailures.length > 0) {
       process.exitCode = 1;
     }
   } catch (error) {

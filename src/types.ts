@@ -41,6 +41,9 @@ export type CleanupSummary = {
   targetsFailed: number;
   ownLogsSkipped: string[];
   ownLogsFailures: CleanupFailure[];
+  customCleanPaths: string[];
+  customPathsSkipped: string[];
+  customPathsFailures: CleanupFailure[];
 };
 
 export type CleanupOptions = {
@@ -53,6 +56,7 @@ export type RunCleanupOptions = {
   repoListPath?: string;
   projectsRoot?: string;
   ownLogsPath?: string;
+  customCleanPaths?: string[];
   currentLogFile?: string;
   retryAttempts?: number;
   retryDelayMs?: number;

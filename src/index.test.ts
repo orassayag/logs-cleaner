@@ -58,6 +58,27 @@ describe('runCleanup', () => {
     await expect(fs.readdir(ownLogsPath)).resolves.toEqual([]);
   });
 
+  it('cleans configured custom absolute paths', async () => {
+    const projectsRoot = await createTempDir();
+    const repoListPath = await writeRepoList(projectsRoot, []);
+    const customPath = await createTempDir();
+    await mkdir(path.join(customPath, 'nested'), { recursive: true });
+    await writeFile(path.join(customPath, 'old.log'), 'old');
+    await writeFile(path.join(customPath, 'nested', 'inner.log'), 'inner');
+
+    const summary = await runCleanup({
+      repoListPath,
+      projectsRoot,
+      ownLogsPath: 'own-logs',
+      customCleanPaths: [customPath],
+      retryDelayMs: 0,
+    });
+
+    expect(summary.customCleanPaths).toEqual([customPath]);
+    expect(summary.customPathsFailures).toEqual([]);
+    await expect(fs.readdir(customPath)).resolves.toEqual([]);
+  });
+
   it('rejects a missing repo-list file', async () => {
     await expect(
       runCleanup({
