@@ -2,3 +2,4 @@ allowBuilds:
   esbuild: true
 minimumReleaseAgeExclude:
   - '@types/node@26.1.2'
+  - '@rolldown/binding-win32-x64-msvc@1.2.1'
