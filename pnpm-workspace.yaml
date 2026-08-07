@@ -1,9 +1,9 @@
 allowBuilds:
   esbuild: true
 minimumReleaseAgeExclude:
-  - '@types/node@26.1.2'
+  - '@types/node@26.1.2 || 26.2.0'
   - '@rolldown/binding-win32-x64-msvc@1.2.1 || 1.2.2 || 1.2.3'
-  - tsx@4.23.4 || 4.23.5 || 4.23.6 || 4.23.8 || 4.23.9
+  - tsx@4.23.4 || 4.23.5 || 4.23.6 || 4.23.8 || 4.23.9 || 4.23.11
   - '@typescript-eslint/eslint-plugin@8.66.0'
   - '@typescript-eslint/parser@8.66.0'
   - '@typescript-eslint/project-service@8.66.0'
@@ -15,3 +15,4 @@ minimumReleaseAgeExclude:
   - '@typescript-eslint/utils@8.66.0'
   - '@typescript-eslint/visitor-keys@8.66.0'
   - typescript-eslint@8.66.0
+  - eslint@10.8.1
