@@ -83,11 +83,11 @@
     "pnpm": ">=8.0.0"
   },
   "dependencies": {
-    "dotenv": "^18.0.7"
+    "dotenv": "^18.0.8"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@rolldown/binding-win32-x64-msvc": "^1.2.13",
+    "@rolldown/binding-win32-x64-msvc": "^1.2.14",
     "@types/node": "^26.6.5",
     "@typescript-eslint/eslint-plugin": "^8.71.2",
     "@typescript-eslint/parser": "^8.71.2",
